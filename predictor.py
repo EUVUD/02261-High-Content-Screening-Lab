@@ -4,8 +4,16 @@ import numpy as np
 import os
 from scipy.signal import find_peaks
 
-def cellCountFeature(imgPath : str): #Use watershed to count cells
-    img = cv.imread(imgPath)
+class field:
+    dapiImg = None
+    transImg = None
+
+    def __init__(self, dapiPath : str, transPath : str):
+        self.dapiImg = cv.imread(dapiPath)
+        self.transImg = cv.imread(transPath)
+
+def cellCountFeature(data : field): #Use watershed to count cells
+    img = data.dapiImg
     imgRGB = cv.cvtColor(img, cv.COLOR_BGR2RGB)
     img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
@@ -44,9 +52,8 @@ def cellCountFeature(imgPath : str): #Use watershed to count cells
 
     return num_labels
 
-def circularityFeature(imgPath : str): #Use the circularity formula
-    img = cv.imread(imgPath)
-    imgRGB = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+def circularityFeature(data : field): #Use the circularity formula
+    img = data.transImg
 
     #Convert to grayscale
     img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
@@ -66,10 +73,10 @@ def circularityFeature(imgPath : str): #Use the circularity formula
 
     return np.mean(circularities)
 
-def relaSizeFeature(imgPath : str): #Use Area / Number of cells
-    img = cv.imread(imgPath)
+def relaSizeFeature(data : field): #Use Area / Number of cells
+    img = data.transImg
 
-    num_cells = cellCountFeature(imgPath)
+    num_cells = cellCountFeature(data)
 
     #Convert to grayscale
     img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
@@ -90,10 +97,14 @@ def relaSizeFeature(imgPath : str): #Use Area / Number of cells
 
     return rela_size
 
-def brightnessFeature(imgPath : str): #Use the mean brightness
-    img = cv.imread(imgPath)
+def brightnessFeature(data : field): #Use the mean brightness
+    img = data.dapiImg
 
     #Convert to grayscale
     img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
-    
+    #Pick pixels with intensity > 0
+    bright_pixels = img[img > 0]
+
+    mean_brightness = np.mean(bright_pixels)
+    return mean_brightness
