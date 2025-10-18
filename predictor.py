@@ -166,14 +166,48 @@ trtClassifier.fit(X_train, y_train)
 y_pred = trtClassifier.predict(X_test)
 
 accuracy = accuracy_score(y_test, y_pred)
-print(f'Accuracy: {accuracy * 100:.2f}%')
+print(f'Treatment Accuracy: {accuracy * 100:.2f}%')
+
+
+plt.figure(figsize=(16, 6))
 
 conf_matrix = confusion_matrix(y_test, y_pred)
 
-plt.figure(figsize=(8, 6))
+plt.subplot(1, 2, 1)
 sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues')
 
-plt.title('Confusion Matrix Heatmap')
+plt.title('Treatment Confusion Matrix')
 plt.xlabel('Predicted Labels')
 plt.ylabel('True Labels')
+
+
+# group prediction model
+X_group = X
+y_group = []
+
+for data in imgDataset:
+    y_group.append(data.groupNum)
+y_group = np.array(y_group)
+
+Xg_train, Xg_test, yg_train, yg_test = train_test_split(X_group, y_group, test_size=0.2, random_state=42)
+scaler_g = StandardScaler()
+Xg_train = scaler_g.fit_transform(Xg_train)
+Xg_test = scaler_g.transform(Xg_test)
+
+groupClassifier = RandomForestClassifier(n_estimators=100, random_state=42)
+groupClassifier.fit(Xg_train, yg_train)
+yg_pred = groupClassifier.predict(Xg_test)
+
+group_accuracy = accuracy_score(yg_test, yg_pred)
+print(f'Group Accuracy: {group_accuracy * 100:.2f}%')
+
+group_conf_matrix = confusion_matrix(yg_test, yg_pred)
+
+plt.subplot(1, 2, 2)
+sns.heatmap(group_conf_matrix, annot=True, fmt='d', cmap='Blues')
+plt.title('Group Confusion Matrix')
+plt.xlabel('Predicted')
+plt.ylabel('True')
+
+plt.tight_layout()
 plt.show()
