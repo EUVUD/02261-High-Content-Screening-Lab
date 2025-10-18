@@ -1,16 +1,49 @@
 import cv2 as cv
-import matplotlib.pyplot as plt
 import numpy as np
-import os
+from pathlib import Path
 from scipy.signal import find_peaks
 
+#Data structure to hold images
 class field:
     dapiImg = None
     transImg = None
+    groupNum = 0 #Which group data belongs to
+    treatNum = 0 #Which treatment applies on the data
 
-    def __init__(self, dapiPath : str, transPath : str):
+    def __init__(self, dapiPath : str, transPath : str, groupNum : int, 
+                 treatNum : int):
         self.dapiImg = cv.imread(dapiPath)
         self.transImg = cv.imread(transPath)
+        self.groupNum = groupNum
+        self.treatNum = treatNum
+
+# Dataset Loader
+def loadDataset(dataDir : str):
+    
+    datasetName = set()
+    dataset = []
+
+    path = Path(dataDir)
+    for file in path.iterdir():
+        nameParts = file.stem.split('_')[:-1] #Separate by '_' and remove last part
+        sharedParts = '_'.join(nameParts) #Join back to get shared name
+        datasetName.add(sharedParts)
+
+    for sharedName in datasetName:
+        # Extract paths
+        dapiPath = str(path / f"{sharedName}_DAPI.jpg")
+        transPath = str(path / f"{sharedName}_Trans.jpg")
+
+        # Load images
+        dapiImg = cv.imread(dapiPath)
+        transImg = cv.imread(transPath)
+
+        nameParts = sharedName.split('_')
+        groupNum = int(nameParts[0][1:])
+        treatNum = int(nameParts[4][1:])
+
+        dataset.append(field(dapiPath, transPath, groupNum, treatNum))
+
 
 def cellCountFeature(data : field): #Use watershed to count cells
     img = data.dapiImg
