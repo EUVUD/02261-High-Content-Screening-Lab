@@ -129,7 +129,7 @@ def objectLevelFeatures(data: field):
 # Helper to compute all features
 # -----------------------------------------------------
 def buildFeatureMatrix(dataset):
-    X, y_treat, y_group = [], [], []
+    X, y_treat, y_group, y_day = [], [], [], []
     for d in dataset:
         feats = [
             cellCountFeature(d),
@@ -144,7 +144,11 @@ def buildFeatureMatrix(dataset):
         X.append(feats)
         y_treat.append(d.treatNum)
         y_group.append(d.groupNum)
-    return np.array(X), np.array(y_treat), np.array(y_group)
+        if d.groupNum <= 5:
+            y_day.append(1)
+        else:
+            y_day.append(2)
+    return np.array(X), np.array(y_treat), np.array(y_group), np.array(y_day)
 
 
 # -----------------------------------------------------
@@ -231,12 +235,15 @@ def trainRF(X, y, label):
 # -----------------------------------------------------
 if __name__ == "__main__":
     data = loadDataset("./train_data")
-    X, y_treat, y_group = buildFeatureMatrix(data)
+    X, y_treat, y_group, y_day = buildFeatureMatrix(data)
 
     print("\n=== Treatment Model ===")
     trainRF(X, y_treat, "Treatment")
 
     print("\n=== Group Model ===")
     trainRF(X, y_group, "Group")
+
+    print("\n=== Day Model ===")
+    trainRF(X, y_day, "Day")
 
     print("\nFinished all experiments. Results saved in ./results/")

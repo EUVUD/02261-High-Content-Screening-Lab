@@ -1,5 +1,5 @@
 ## Note
-The data from group 2, 4, 5, 9, 11 is used as the train data
+The data from group 2, 4, 5, 9, 10, 11 is used as the train data
 
 Group 7 is not considered due to the weird 0.5 formatting.
 
