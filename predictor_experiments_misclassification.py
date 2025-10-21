@@ -4,6 +4,7 @@
 # Adds richer features, tuning, evaluation, and misclassification tracking
 # ------------------------------------------------------------------
 
+import os
 import cv2 as cv
 import numpy as np
 from pathlib import Path
@@ -129,59 +130,26 @@ def objectLevelFeatures(data: field):
 # ------------------------------------------------------
 # Segmentation function (12 unit task) 
 # ------------------------------------------------------
-def segmentCells(data: field):
-    # Preprocess image
-    imgRGB = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2RGB)
-    gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
+def segmentCells(img):
+    # Convert to grayscale
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
-    imgRGBT = cv.cvtColor(data.transImg, cv.COLOR_BGR2RGB)
-    grayT = cv.cvtColor(data.transImg, cv.COLOR_BGR2GRAY)
+    # Apply Otsu thresholding
+    _, thresh = cv.threshold(gray, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
 
-    # Histogram-based thresholding
-    _, imgThreshold = cv.threshold(gray, 0, 255, 
-                                   cv.THRESH_BINARY + cv.THRESH_OTSU)
-
-    _, imgThresholdT = cv.threshold(grayT, 0, 255,
-                                     cv.THRESH_BINARY + cv.THRESH_OTSU)
-
-    # Morphological dilation
+    # Optional: remove small noise with morphology
     kernel = np.ones((3, 3), np.uint8)
-    imgDilate = cv.morphologyEx(imgThreshold, cv.MORPH_DILATE, kernel)
+    thresh = cv.morphologyEx(thresh, cv.MORPH_OPEN, kernel, iterations=1)
+    thresh = cv.dilate(thresh, kernel, iterations=1)
 
-    imgDilateT = cv.morphologyEx(imgThresholdT, cv.MORPH_DILATE, kernel)
+    # Find contours (segmented cell boundaries)
+    contours, _ = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
 
-    # Distance transform
-    distTrans = cv.distanceTransform(imgDilate, cv.DIST_L2, 0)
+    # Draw contours on a copy of the original image
+    imgRGB = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+    cv.drawContours(imgRGB, contours, -1, (255, 0, 0), 1)  # red outlines
 
-    distTransT = cv.distanceTransform(imgDilateT, cv.DIST_L2, 0)
-
-    # Normalize to 0–255 and convert to 8-bit
-    distTrans_norm = cv.normalize(distTrans, None, 0, 
-                                  255, cv.NORM_MINMAX).astype('uint8')
-    distTrans_normT = cv.normalize(distTransT, None, 0,
-                                  255, cv.NORM_MINMAX).astype('uint8')
-
-    # Second thresholding on distance
-    _, distThresh = cv.threshold(distTrans_norm, 0, 255,
-                                 cv.THRESH_BINARY + cv.THRESH_OTSU)
-    _, distThreshT = cv.threshold(distTrans_normT, 0, 255,
-                                 cv.THRESH_BINARY + cv.THRESH_OTSU)
-
-    # Connected components
-    distThresh = np.uint8(distThresh)
-    num_labels, labels = cv.connectedComponents(distThresh)
-    distThreshT = np.uint8(distThreshT)
-    num_labelsT, labelsT = cv.connectedComponents(distThreshT)
-
-    # Overlay watershed boundaries (labels == -1)
-    segmented = imgRGB.copy()
-    segmented[labels == -1] = [255, 0, 0]  # Red boundary lines
-    segmentedT = imgRGBT.copy()
-    segmentedT[labelsT == -1] = [255, 0, 0]  # Red boundary lines
-
-    # Update image in place
-    data.dapiImg = segmented
-    data.transImg = segmentedT
+    return imgRGB
 
 # -----------------------------------------------------
 # Helper to compute all features (now includes filenames)
@@ -252,7 +220,7 @@ def trainRF(X, y, label, names):
 
     Path("results/misclassified").mkdir(parents=True, exist_ok=True)
     for i in mis_idx:
-        src_path = Path("train_data") / names_test[i]
+        src_path = Path("seg_data" if "Segmentation" in label else "train_data") / names_test[i]
         dst_path = Path("results/misclassified") / f"{label}_true{y_test[i]}_pred{y_pred[i]}_{names_test[i]}"
         if src_path.exists():
             copy2(src_path, dst_path)
@@ -321,9 +289,22 @@ if __name__ == "__main__":
     trainRF(X, y_day, "Day", names)
 
     print("\n=== Segmentation Treatment Model ===")
-    dataSeg = loadDataset("./train_data")
-    for d in dataSeg:
-        segmentCells(d)
+    
+    input_dir = "./train_data"
+    output_dir = "./seg_data"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Segment images
+    # for filename in os.listdir(input_dir):
+    #     if not filename.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.bmp')):
+    #         continue
+    #     img_path = os.path.join(input_dir, filename)
+    #     img = cv.imread(img_path)
+    #     segmented_img = segmentCells(img)
+    #     out_path = os.path.join(output_dir, filename)
+    #     cv.imwrite(out_path, cv.cvtColor(segmented_img, cv.COLOR_RGB2BGR))
+
+    dataSeg = loadDataset("./seg_data")
     X_seg, y_treat, _, _, names = buildFeatureMatrix(dataSeg)
     trainRF(X_seg, y_treat, "Segmentation_Treatment", names)
 
