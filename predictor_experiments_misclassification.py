@@ -67,7 +67,7 @@ def cellCountFeature(data: field):
 
 
 def circularityFeature(data: field):
-    gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
+    gray = cv.cvtColor(data.transImg, cv.COLOR_BGR2GRAY)
     _, binary = cv.threshold(gray, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
     contours, _ = cv.findContours(binary, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
     circ = [
@@ -125,6 +125,44 @@ def objectLevelFeatures(data: field):
     ecc = [p.eccentricity for p in props]
     intensities = [p.mean_intensity for p in props]
     return [np.mean(areas), np.mean(ecc), np.mean(intensities)]
+
+# ------------------------------------------------------
+# Segmentation function (12 unit task) 
+# ------------------------------------------------------
+def segmentCells(data: field):
+    # Preprocess image
+    imgRGB = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2RGB)
+    gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
+
+    # Histogram-based thresholding
+    _, imgThreshold = cv.threshold(gray, 0, 255, 
+                                   cv.THRESH_BINARY + cv.THRESH_OTSU)
+
+    # Morphological dilation
+    kernel = np.ones((3, 3), np.uint8)
+    imgDilate = cv.morphologyEx(imgThreshold, cv.MORPH_DILATE, kernel)
+
+    # Distance transform
+    distTrans = cv.distanceTransform(imgDilate, cv.DIST_L2, 0)
+    
+    # Normalize to 0–255 and convert to 8-bit
+    distTrans_norm = cv.normalize(distTrans, None, 0, 
+                                  255, cv.NORM_MINMAX).astype('uint8')
+
+    # Second thresholding on distance
+    _, distThresh = cv.threshold(distTrans_norm, 0, 255,
+                                 cv.THRESH_BINARY + cv.THRESH_OTSU)
+
+    # Connected components
+    distThresh = np.uint8(distThresh)
+    num_labels, labels = cv.connectedComponents(distThresh)
+
+    # Overlay watershed boundaries (labels == -1)
+    segmented = imgRGB.copy()
+    segmented[labels == -1] = [255, 0, 0]  # Red boundary lines
+
+    # Update image in place
+    data.dapiImg = segmented
 
 
 # -----------------------------------------------------
@@ -263,5 +301,10 @@ if __name__ == "__main__":
 
     print("\n=== Day Model ===")
     trainRF(X, y_day, "Day", names)
+
+    print("\n=== Segmentation Treatment Model ===")
+    for d in data:
+        segmentCells(d)
+    trainRF(X, y_treat, "Segmentation_Treatment", names)
 
     print("\nFinished all experiments. Results saved in ./results/")
