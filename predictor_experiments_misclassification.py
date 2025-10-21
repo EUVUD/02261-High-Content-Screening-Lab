@@ -134,36 +134,54 @@ def segmentCells(data: field):
     imgRGB = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2RGB)
     gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
 
+    imgRGBT = cv.cvtColor(data.transImg, cv.COLOR_BGR2RGB)
+    grayT = cv.cvtColor(data.transImg, cv.COLOR_BGR2GRAY)
+
     # Histogram-based thresholding
     _, imgThreshold = cv.threshold(gray, 0, 255, 
                                    cv.THRESH_BINARY + cv.THRESH_OTSU)
+
+    _, imgThresholdT = cv.threshold(grayT, 0, 255,
+                                     cv.THRESH_BINARY + cv.THRESH_OTSU)
 
     # Morphological dilation
     kernel = np.ones((3, 3), np.uint8)
     imgDilate = cv.morphologyEx(imgThreshold, cv.MORPH_DILATE, kernel)
 
+    imgDilateT = cv.morphologyEx(imgThresholdT, cv.MORPH_DILATE, kernel)
+
     # Distance transform
     distTrans = cv.distanceTransform(imgDilate, cv.DIST_L2, 0)
-    
+
+    distTransT = cv.distanceTransform(imgDilateT, cv.DIST_L2, 0)
+
     # Normalize to 0–255 and convert to 8-bit
     distTrans_norm = cv.normalize(distTrans, None, 0, 
+                                  255, cv.NORM_MINMAX).astype('uint8')
+    distTrans_normT = cv.normalize(distTransT, None, 0,
                                   255, cv.NORM_MINMAX).astype('uint8')
 
     # Second thresholding on distance
     _, distThresh = cv.threshold(distTrans_norm, 0, 255,
                                  cv.THRESH_BINARY + cv.THRESH_OTSU)
+    _, distThreshT = cv.threshold(distTrans_normT, 0, 255,
+                                 cv.THRESH_BINARY + cv.THRESH_OTSU)
 
     # Connected components
     distThresh = np.uint8(distThresh)
     num_labels, labels = cv.connectedComponents(distThresh)
+    distThreshT = np.uint8(distThreshT)
+    num_labelsT, labelsT = cv.connectedComponents(distThreshT)
 
     # Overlay watershed boundaries (labels == -1)
     segmented = imgRGB.copy()
     segmented[labels == -1] = [255, 0, 0]  # Red boundary lines
+    segmentedT = imgRGBT.copy()
+    segmentedT[labelsT == -1] = [255, 0, 0]  # Red boundary lines
 
     # Update image in place
     data.dapiImg = segmented
-
+    data.transImg = segmentedT
 
 # -----------------------------------------------------
 # Helper to compute all features (now includes filenames)
@@ -303,8 +321,10 @@ if __name__ == "__main__":
     trainRF(X, y_day, "Day", names)
 
     print("\n=== Segmentation Treatment Model ===")
-    for d in data:
+    dataSeg = loadDataset("./train_data")
+    for d in dataSeg:
         segmentCells(d)
-    trainRF(X, y_treat, "Segmentation_Treatment", names)
+    X_seg, y_treat, _, _, names = buildFeatureMatrix(dataSeg)
+    trainRF(X_seg, y_treat, "Segmentation_Treatment", names)
 
     print("\nFinished all experiments. Results saved in ./results/")
