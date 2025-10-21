@@ -21,14 +21,14 @@ from shutil import copy2
 
 
 # -----------------------------------------------------
-# Field class (fixed to store original file paths)
+# Field class
 # -----------------------------------------------------
 class field:
     def __init__(self, dapiPath: str, transPath: str, groupNum: int, treatNum: int):
         self.dapiImg = cv.imread(dapiPath)
         self.transImg = cv.imread(transPath)
-        self.dapiPath = dapiPath        # Store file path
-        self.transPath = transPath      # Store file path
+        self.dapiPath = dapiPath
+        self.transPath = transPath
         self.groupNum = groupNum
         self.treatNum = treatNum
 
@@ -41,6 +41,7 @@ def loadDataset(dataDir: str):
     path = Path(dataDir)
     datasetNames = {"_".join(f.stem.split("_")[:-1]) for f in path.glob("*.jpg")}
 
+    # Grab DAPI and TRANS file path name for each field image
     for sharedName in datasetNames:
         dapiPath = str(path / f"{sharedName}_DAPI.jpg")
         transPath = str(path / f"{sharedName}_TRANS.jpg")
@@ -57,20 +58,25 @@ def loadDataset(dataDir: str):
 
 
 # -----------------------------------------------------
-# Feature extractors
+# Feature extractor helpers
 # -----------------------------------------------------
+
+# Number of cells in a DAPI image
 def cellCountFeature(data: field):
     gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
     blur = cv.GaussianBlur(gray, (5, 5), 0)
     _, binary = cv.threshold(blur, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
+
     num_labels, _ = cv.connectedComponents(binary)
     return num_labels - 1
 
-
+# Average circularity of all cells in a TRANS image
 def circularityFeature(data: field):
     gray = cv.cvtColor(data.transImg, cv.COLOR_BGR2GRAY)
     _, binary = cv.threshold(gray, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
     contours, _ = cv.findContours(binary, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+
+    # average the circularity of each contour
     circ = [
         (4 * np.pi * cv.contourArea(c)) / (cv.arcLength(c, True) ** 2 + 1e-5)
         for c in contours
@@ -78,7 +84,7 @@ def circularityFeature(data: field):
     ]
     return np.mean(circ) if circ else 0
 
-
+# Average area of all nuclei in DAPI image
 def relaSizeFeature(data: field):
     gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
     _, binary = cv.threshold(gray, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
@@ -86,24 +92,24 @@ def relaSizeFeature(data: field):
     areas = [cv.contourArea(c) for c in contours]
     return np.mean(areas) if areas else 0
 
-
+# Average brightness of a DAPI image
 def brightnessFeature(data: field):
     gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
     return np.mean(gray[gray > 0])
 
-
-# ---------- Additional Features ----------
+# Sharpness of edges of DAPI image
 def textureContrastFeature(data: field):
     gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
+    # emphasize local contrast + texture variation
     lap = cv.Laplacian(gray, cv.CV_64F)
     return np.var(lap)
 
-
+# Variance of brightness of a DAPI image
 def intensityVarianceFeature(data: field):
     gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
     return np.var(gray)
 
-
+# How tightly packed cells are in a DAPI image
 def cellDensityFeature(data: field):
     gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
     _, binary = cv.threshold(gray, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
@@ -111,10 +117,14 @@ def cellDensityFeature(data: field):
     if len(contours) < 3:
         return 0
     pts = np.vstack([c.squeeze() for c in contours if len(c) > 4])
+
+    # smallest convex polygon containing all cells
     hull = ConvexHull(pts)
+
+    # cell density = num cells / area of smallest convex polygon containing all of them
     return len(contours) / hull.area
 
-
+# Features for each cell: average area, eccentricity, and intensity across all cels
 def objectLevelFeatures(data: field):
     gray = cv.cvtColor(data.dapiImg, cv.COLOR_BGR2GRAY)
     _, binary = cv.threshold(gray, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
@@ -128,7 +138,7 @@ def objectLevelFeatures(data: field):
     return [np.mean(areas), np.mean(ecc), np.mean(intensities)]
 
 # ------------------------------------------------------
-# Segmentation function (12 unit task) 
+# Segmentation function (12 unit) 
 # ------------------------------------------------------
 def segmentCells(img):
     # Convert to grayscale
@@ -152,7 +162,7 @@ def segmentCells(img):
     return imgRGB
 
 # -----------------------------------------------------
-# Helper to compute all features (now includes filenames)
+# Helper to compute all features
 # -----------------------------------------------------
 def buildFeatureMatrix(dataset):
     X, y_treat, y_group, y_day, names = [], [], [], [], []
@@ -179,9 +189,10 @@ def buildFeatureMatrix(dataset):
 
 
 # -----------------------------------------------------
-# Model training and evaluation (with misclassification tracking)
+# Model training and evaluation
 # -----------------------------------------------------
 def trainRF(X, y, label, names):
+    # split into train and test groups
     X_train, X_test, y_train, y_test, names_train, names_test = train_test_split(
         X, y, names, test_size=0.2, random_state=42
     )
@@ -214,7 +225,7 @@ def trainRF(X, y, label, names):
     print("Best params:", grid.best_params_)
     print(classification_report(y_test, y_pred, digits=3))
 
-    # ---- Misclassification tracking ----
+    # misclassification tracking
     mis_idx = np.where(y_pred != y_test)[0]
     print(f"{len(mis_idx)} misclassified samples out of {len(y_test)}")
 
@@ -227,7 +238,7 @@ def trainRF(X, y, label, names):
     if len(mis_idx) > 0:
         print(f"Misclassified examples saved in results/misclassified/")
 
-    # ---- Confusion Matrix ----
+    # confusion matrix
     cm = confusion_matrix(y_test, y_pred)
     plt.figure(figsize=(5, 4))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
@@ -238,7 +249,7 @@ def trainRF(X, y, label, names):
     plt.savefig(f"results/{label}_confusion_matrix.png", bbox_inches="tight")
     plt.close()
 
-    # ---- Feature Importance ----
+    # feature importance
     importances = clf.feature_importances_
     feat_names = [
         "CellCount",
@@ -273,12 +284,13 @@ def trainRF(X, y, label, names):
 
 
 # -----------------------------------------------------
-# Main execution
+# Main
 # -----------------------------------------------------
 if __name__ == "__main__":
     data = loadDataset("./train_data")
     X, y_treat, y_group, y_day, names = buildFeatureMatrix(data)
 
+    # training + testing each model
     print("\n=== Treatment Model ===")
     trainRF(X, y_treat, "Treatment", names)
 
